@@ -6,10 +6,19 @@ from flask_wtf import FlaskForm
 from flask_sqlalchemy import SQLAlchemy
 import os
 
+from flask_script import Shell
+
 from datetime import datetime
 
 from wtforms import StringField, SubmitField
 from wtforms.validators import Required
+
+from flask_migrate import Migrate, MigrateCommand
+
+from flask_mail import Mail, Message
+
+def make_shell_context():
+    return dict(app=app, db=db, User=User, Role=Role)
 
 class NameForm(FlaskForm):
     name = StringField("What's you name?", validators=[Required()])
@@ -21,6 +30,14 @@ app = Flask(__name__)
 
 app.config["SECRET_KEY"] = "ceshi123456"
 
+# 配置邮件
+app.config["FLASKY_ADMIN"] = os.environ.get("FLASKY_ADMIN")
+app.config["MAIL_SERVER"] = "smtp.163.com"
+app.config["MAIL_PORT"] = 25
+app.config["MAIL_USR_TLS"] = True 
+app.config["MAIL_USERNAME"] = os.environ.get("MAIL_USERNAME")
+app.config["MAIL_PASSWORD"] = os.environ.get("MAIL_PASSWORD")
+
 # 配置数据库
 app.config["SQLALCHEMY_DATABASE_URI"] = \
     "sqlite:///" + os.path.join(basedir, "data.sqlite")
@@ -30,7 +47,23 @@ db = SQLAlchemy(app)
 manager = Manager(app)
 Bootstrap = Bootstrap(app)
 moment = Moment(app)
+migrate = Migrate(app, db)
+manager.add_command("db", MigrateCommand)
+mail  = Mail(app)
 
+manager.add_command("shell", Shell(make_context=make_shell_context))
+
+app.config["FLASKY_MAIL_SUBJECT_PREFIX"] = "[Flasky]"
+app.config["FLASKY_MAIL_SENDER"] = "18813035114@163.com"
+
+def send_email(to, subject, template, **kwargs):
+    print(app.config["MAIL_PASSWORD"])
+    msg = Message(app.config["FLASKY_MAIL_SUBJECT_PREFIX"] + subject,\
+        sender=app.config["FLASKY_MAIL_SENDER"], recipients=[to])
+    msg.body = render_template(template + ".txt", **kwargs)
+    msg.html = render_template(template + ".html", **kwargs)
+    mail.send(msg)
+    print("send mail successfully")
 
 @app.route('/', methods=["GET", "POST"])
 def index():
@@ -42,8 +75,11 @@ def index():
         if user is None:
             user = User(username=form.name.data)
             db.session.add(user)
-            print("user", user)
+            # print("user", user)
             session["known"] = False
+            print("config", app.config["FLASKY_ADMIN"])
+            if app.config["FLASKY_ADMIN"]:
+                send_email(app.config["FLASKY_ADMIN"], "New User", "mail/new_user", user=user)
         else:
             session["known"] = True
         
